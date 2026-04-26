@@ -1,0 +1,18 @@
+groups:
+  - name: stock_alerts
+    rules:
+      - alert: HighAPILatency
+        expr: rate(http_request_duration_seconds_sum{handler="/monitor"}[5m]) / rate(http_request_duration_seconds_count{handler="/monitor"}[5m]) > 3
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          description: '/monitor 端點回應時間超過 3 秒'
+
+      - alert: APIHighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          description: 'API 出現 5xx 錯誤'
