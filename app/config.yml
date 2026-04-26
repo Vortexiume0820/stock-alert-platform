@@ -1,0 +1,7 @@
+stocks:
+  - id: "2330"
+    name: "台積電"
+    threshold_pct: 3.0
+  - id: "2454"
+    name: "聯發科"
+    threshold_pct: 2.5
