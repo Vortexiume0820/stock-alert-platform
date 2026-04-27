@@ -1,6 +1,14 @@
 groups:
   - name: stock_alerts
     rules:
+      - alert: TestAlert
+        expr: up{job="stock-alert-api"} == 1
+        for: 10s
+        labels:
+          severity: info
+        annotations:
+          description: '測試告警：API 服務正在運行中'
+
       - alert: HighAPILatency
         expr: rate(http_request_duration_seconds_sum{handler="/monitor"}[5m]) / rate(http_request_duration_seconds_count{handler="/monitor"}[5m]) > 3
         for: 1m

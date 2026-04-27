@@ -1,6 +1,14 @@
 from fastapi import FastAPI
 from app.routers import price, alert
 from prometheus_fastapi_instrumentator import Instrumentator
+from app.services.scheduler import start_scheduler
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    scheduler = start_scheduler()
+    yield
+    scheduler.shutdown()
 
 app = FastAPI()
 

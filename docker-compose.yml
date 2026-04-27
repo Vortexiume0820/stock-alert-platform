@@ -6,6 +6,8 @@ services:
       - "8000:8000"
     volumes:
       - ./app/config.yml:/code/app/config.yml
+    env_file:
+      - .env
 
 
   prometheus:
@@ -15,6 +17,7 @@ services:
       - "9090:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
   
   
   grafana:
@@ -24,9 +27,14 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/etc/grafana/dashboards
+
     depends_on:
       - prometheus
-      
+   
   alertmanager:
     image: prom/alertmanager
     container_name: alertmanager
@@ -36,3 +44,5 @@ services:
       - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml
     env_file:
       - .env
+volumes:
+  grafana_data:   
