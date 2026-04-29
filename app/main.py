@@ -3,7 +3,16 @@ from app.routers import price, alert
 from prometheus_fastapi_instrumentator import Instrumentator
 from app.services.scheduler import start_scheduler
 from contextlib import asynccontextmanager
+import logging
 
+logger = logging.getLogger("stock_alert")
+
+@app.get("/stock/{symbol}")
+async def get_stock(symbol: str):
+    logger.info(f"Fetching stock: {symbol}")
+    ...
+    logger.info(f"Stock fetched: {symbol} price={price}")
+    
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     scheduler = start_scheduler()
