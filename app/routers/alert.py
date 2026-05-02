@@ -23,7 +23,7 @@ def get_monitored_stocks():
             stock_id=stock["id"],
             threshold_pct=stock["threshold_pct"]
         )
-        data["name"] = stock["name"]   # 把中文名稱加進回傳
+        data["name"] = stock["name"]  
         results.append(data)
     
     return results
