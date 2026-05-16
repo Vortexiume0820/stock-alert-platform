@@ -1,0 +1,20 @@
+groups:
+  - name: slo_rules
+    interval: 30s
+    rules:
+      # SLI：可用性（成功請求比例）
+      - record: sli:availability:rate5m
+        expr: |
+          sum(rate(http_requests_total{status="2xx"}[5m]))
+          /
+          sum(rate(http_requests_total[5m]))
+      # SLI：P95 延遲
+      - record: sli:latency_p95:rate5m
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le)
+          )
+      # SLI：Scheduler 資料新鮮度（距上次執行秒數）
+      - record: sli:scheduler_freshness:seconds
+        expr: |
+          time() - scheduler_runs_total

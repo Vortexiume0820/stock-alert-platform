@@ -5,20 +5,28 @@ from app.logger import setup_logger
 import yaml
 from pathlib import Path
 import traceback
+from prometheus_client import Counter
+
 
 logger = setup_logger("scheduler")
 CONFIG_PATH = Path(__file__).parent.parent / "config.yml"
+scheduler_runs_total = Counter('scheduler_runs_total', 'Scheduler execution count')  # ← 新增
+
+_alert_state: dict[str, bool] = {}
+
 
 def load_config():
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 def check_stocks():
+    scheduler_runs_total.inc()
     logger.info("股價排程檢查開始", extra={"event": "scheduler_run"})
     config = load_config()
     service = StockService()
 
     for stock in config.get("stocks", []):
+        stock_id = stock["id"]
         try:
             data = service.get_price(
                 stock_id=stock["id"],
@@ -36,9 +44,13 @@ def check_stocks():
                 }
             )
 
-            if data["alert"]:
+            prev_alerted = _alert_state.get(stock_id, False)
+            curr_alerted = data["alert"]
+
+
+            if curr_alerted and not prev_alerted:
                 send_slack_alert(
-                    stock_id=stock["id"],
+                    stock_id=stock_id,
                     name=stock["name"],
                     price=data["price"],
                     change_pct=data["change_pct"]
@@ -53,7 +65,7 @@ def check_stocks():
                         "change_pct": data["change_pct"]
                     }
                 )
-
+            _alert_state[stock_id] = curr_alerted
         except Exception as e:
             logger.error(
                 "股價查詢失敗",

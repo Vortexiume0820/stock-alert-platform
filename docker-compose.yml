@@ -8,16 +8,22 @@ services:
       - ./app/config.yml:/code/app/config.yml
     env_file:
       - .env
+    networks:
+      - internal
+      - external
 
 
   prometheus:
     image: prom/prometheus
     container_name: prometheus
-    ports:
-      - "9090:9090"
+    # ports: 暫時移除，不對外暴露Port
+    #   - "9090:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
+      - ./monitoring/slo_rules.yml:/etc/prometheus/slo_rules.yml
+    networks:
+      - internal
   
   
   grafana:
@@ -32,24 +38,32 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
       - ./monitoring/grafana/dashboards:/etc/grafana/dashboards
     depends_on:
-      - prometheus   
+      - prometheus
+    networks:
+      - internal
+      - external   
+
   alertmanager:
     image: prom/alertmanager
     container_name: alertmanager
-    ports:
-      - "9093:9093"
+    # ports:
+    #   - "9093:9093"
     volumes:
       - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml
     env_file:
       - .env
     command:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
+    networks:
+      - internal
   loki:
     image: grafana/loki:latest
     container_name: loki
-    ports:
-      - "3100:3100"
+    # ports:
+    #   - "3100:3100"
     command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - internal
   promtail:
     image: grafana/promtail:latest
     container_name: promtail
@@ -58,13 +72,23 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./monitoring/promtail.yml:/etc/promtail/config.yml
     command: -config.file=/etc/promtail/config.yml
+    networks:
+      - internal
   tempo:
     image: grafana/tempo:latest
     command: ["-config.file=/etc/tempo.yaml"]
     volumes:
       - ./monitoring/tempo.yml:/etc/tempo.yaml
     ports:
-      - "3200:3200"   # Tempo HTTP
+      # - "3200:3200"   # Tempo HTTP
       - "4317:4317"   # OTLP gRPC
+    networks:
+      - internal
 volumes:
-  grafana_data:   
+  grafana_data:
+  #內外網設定
+networks:
+  internal:
+    driver: bridge
+  external:
+    driver: bridge   

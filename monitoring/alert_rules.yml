@@ -1,21 +1,21 @@
 groups:
   - name: stock_alerts
     rules:
-      - alert: TestAlert
-        expr: up{job="stock-alert-api"} == 1
+      - alert: APIDown
+        expr: up{job="stock-alert-api"} == 0
         for: 10s
         labels:
-          severity: info
+          severity: critical
         annotations:
-          description: '測試告警：API 服務正在運行中'
+          description: 'API 服務已離線，請立即處理'
 
       - alert: HighAPILatency
-        expr: rate(http_request_duration_seconds_sum{handler="/monitor"}[5m]) / rate(http_request_duration_seconds_count{handler="/monitor"}[5m]) > 3
+        expr: rate(http_request_duration_seconds_sum[5m]) / rate(http_request_duration_seconds_count[5m]) > 0.5
         for: 1m
         labels:
           severity: warning
         annotations:
-          description: '/monitor 端點回應時間超過 3 秒'
+          description: 'API 平均回應時間超過 500ms'
 
       - alert: APIHighErrorRate
         expr: rate(http_requests_total{status=~"5.."}[5m]) > 0
@@ -24,3 +24,19 @@ groups:
           severity: critical
         annotations:
           description: 'API 出現 5xx 錯誤'
+
+      - alert: SchedulerStopped
+        expr: increase(scheduler_runs_total[5m]) == 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          description: 'Scheduler 超過 3 分鐘未執行，股價監控可能已中斷'
+
+      - alert: SLOAvailabilityBreach
+        expr: sli:availability:rate5m < 0.995
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          description: '可用性 SLO 違反：當前可用性低於 99.5%'

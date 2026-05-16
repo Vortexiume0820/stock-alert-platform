@@ -1,9 +1,10 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pathlib import Path
 import yaml
 from app.services.stock import StockService
+from app.dependencies import verify_api_key
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(verify_api_key)])
 service = StockService()
 
 CONFIG_PATH = Path(__file__).parent.parent / "config.yml"
@@ -12,7 +13,7 @@ def load_config():
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
-@router.get("/monitor")
+@router.get("/monitor" )
 def get_monitored_stocks():
     config = load_config()
     stocks = config.get("stocks", [])

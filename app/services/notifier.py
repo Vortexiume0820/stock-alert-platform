@@ -1,12 +1,11 @@
 import httpx
 import os
+from app.config import settings
 
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
 
 def send_slack_alert(stock_id: str, name: str, price: float, change_pct: float):
-    if not SLACK_WEBHOOK_URL:
-        print("警告：SLACK_WEBHOOK_URL 未設定")
-        return
+    url = settings.SLACK_WEBHOOK_URL
     
     message = {
         "text": f"📈 *股價警示*\n股票：{name}（{stock_id}）\n現價：{price}\n變動：{change_pct}%"
