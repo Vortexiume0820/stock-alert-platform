@@ -1,18 +1,42 @@
 global:
   resolve_timeout: 5m
+  slack_api_url: ''
 
 route:
-  group_by: ['alertname']
+  group_by: ['alertname', 'severity']
   group_wait: 10s
-  group_interval: 10s
+  group_interval: 5m
   repeat_interval: 1h
-  receiver: 'slack-notifications'
+  receiver: 'slack-warning'
+  routes:
+    - match:
+        severity: critical
+      receiver: 'slack-critical'
+    - match:
+        severity: warning
+      receiver: 'slack-warning'
 
 receivers:
-  - name: 'slack-notifications'
+  - name: 'slack-critical'
     slack_configs:
-      - api_url: '${SLACK_WEBHOOK_URL}'
-        channel: '#alert'
-        title: '📈 股價警示'
+      - channel: '#alert'
+        title: '🚨 [CRITICAL] {{ .CommonLabels.alertname }}'
         text: '{{ .CommonAnnotations.description }}'
         send_resolved: true
+        color: '#FF0000'
+
+  - name: 'slack-warning'
+    slack_configs:
+      - channel: '#alert'
+        title: '⚠️ [WARNING] {{ .CommonLabels.alertname }}'
+        text: '{{ .CommonAnnotations.description }}'
+        send_resolved: true
+        color: '#FFA500'
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname']
+
