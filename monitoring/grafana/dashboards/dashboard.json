@@ -54,7 +54,7 @@
         "kind": "Panel",
         "spec": {
           "id": 10,
-          "title": "API請求總數",
+          "title": "Scheduler 執行頻率",
           "description": "",
           "links": [],
           "data": {
@@ -510,7 +510,7 @@
         "kind": "Panel",
         "spec": {
           "id": 9,
-          "title": "monitor 請求總數",
+          "title": "股價查詢成功/失敗 (per sec)",
           "description": "",
           "links": [],
           "data": {
@@ -529,10 +529,9 @@
                       },
                       "spec": {
                         "editorMode": "code",
-                        "expr": "http_requests_total{handler=\"/monitor\"}",
+                        "expr": "rate(stock_price_fetch_total[5m])",
                         "instant": true,
-                        "key": "Q-1c87c45b-cd0c-49bd-b004-3c9554f63a6f-0",
-                        "legendFormat": "__auto",
+                        "legendFormat": "{{stock_id}} - {{status}}",
                         "range": true
                       }
                     },

@@ -46,10 +46,13 @@ app.openapi = custom_openapi
 setup_tracer()
 
 # 自動埋點
-FastAPIInstrumentor().instrument_app(app)
+FastAPIInstrumentor().instrument_app(app,  
+                                     excluded_urls="health,metrics,monitor,docs,openapi.json,redoc")
 HTTPXClientInstrumentor().instrument()
 
-Instrumentator().instrument(app).expose(app)
+Instrumentator(
+    excluded_handlers=["/health", "/metrics", "/docs", "/openapi.json", "/redoc", "/monitor"]
+).instrument(app).expose(app)
 
 app.include_router(price.router)
 app.include_router(alert.router)

@@ -53,3 +53,5 @@ opentelemetry-sdk==1.33.0
 opentelemetry-exporter-otlp-proto-grpc==1.33.0
 opentelemetry-instrumentation-fastapi==0.54b0
 opentelemetry-instrumentation-httpx==0.54b0
+pybreaker==1.2.0
+tenacity==9.0.0

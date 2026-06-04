@@ -18,25 +18,52 @@ groups:
           description: 'API 平均回應時間超過 500ms'
 
       - alert: APIHighErrorRate
-        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0
+        expr: |
+          rate(http_requests_total{status="5xx"}[5m])
+          /
+          rate(http_requests_total[5m]) > 0.01
         for: 1m
         labels:
           severity: critical
         annotations:
-          description: 'API 出現 5xx 錯誤'
+          description: 'API 5xx 錯誤率超過 1%'
 
       - alert: SchedulerStopped
-        expr: increase(scheduler_runs_total[5m]) == 0
+        expr: rate(scheduler_runs_total[5m]) == 0 or absent(scheduler_runs_total)
         for: 3m
         labels:
           severity: critical
         annotations:
           description: 'Scheduler 超過 3 分鐘未執行，股價監控可能已中斷'
 
+      - alert: StockDataStale
+        expr: sli:scheduler_staleness:seconds > 90
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          description: '排程超過 90 秒未成功完成，股價資料可能已過期'
+
+      - alert: StockFetchHighFailRate
+        expr: sli:fetch_success_rate:rate5m < 0.8
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          description: '股價查詢成功率低於 80%，部分標的可能無法正常監控'
+
       - alert: SLOAvailabilityBreach
-        expr: sli:availability:rate5m < 0.995
+        expr: sli:http_availability:rate5m < 0.995
         for: 5m
         labels:
           severity: warning
         annotations:
-          description: '可用性 SLO 違反：當前可用性低於 99.5%'
+          description: 'HTTP API 可用性低於 99.5%（影響手動查詢，不影響排程）'
+
+      - alert: CircuitBreakerOpen
+        expr: increase(circuit_breaker_open_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          description: 'Circuit Breaker 已開啟，twstock 連線失敗次數過多，股價查詢暫時中斷'
