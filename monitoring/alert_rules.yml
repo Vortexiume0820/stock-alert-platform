@@ -3,19 +3,19 @@ groups:
     rules:
       - alert: APIDown
         expr: up{job="stock-alert-api"} == 0
-        for: 10s
+        for: 1m
         labels:
           severity: critical
         annotations:
           description: 'API 服務已離線，請立即處理'
 
       - alert: HighAPILatency
-        expr: rate(http_request_duration_seconds_sum[5m]) / rate(http_request_duration_seconds_count[5m]) > 0.5
+        expr: sli:latency_p95:rate5m > 0.5
         for: 1m
         labels:
           severity: warning
         annotations:
-          description: 'API 平均回應時間超過 500ms'
+          description: 'API P95 延遲超過 500ms'
 
       - alert: APIHighErrorRate
         expr: |
@@ -40,7 +40,7 @@ groups:
         expr: sli:scheduler_staleness:seconds > 90
         for: 1m
         labels:
-          severity: critical
+          severity: warning
         annotations:
           description: '排程超過 90 秒未成功完成，股價資料可能已過期'
 
