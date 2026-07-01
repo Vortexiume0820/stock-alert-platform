@@ -1,0 +1,89 @@
+# ============================================================
+# Deployment + Service：Prometheus
+# docker-compose 對應: services.prometheus
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: stock-alert
+  labels:
+    app: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus
+          args:
+            - "--config.file=/etc/prometheus/prometheus.yml"
+            - "--storage.tsdb.retention.time=7d"   # 保留 7 天資料（compose 版本未設定，預設 15d）
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            # ── 掛載 prometheus.yml ────────────────────────
+            # docker-compose 對應:
+            #   ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+            - name: prometheus-config
+              mountPath: /etc/prometheus/prometheus.yml
+              subPath: prometheus.yml
+            # ── 掛載 alert_rules.yml ──────────────────────
+            # docker-compose 對應:
+            #   ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
+            - name: prometheus-config
+              mountPath: /etc/prometheus/alert_rules.yml
+              subPath: alert_rules.yml
+            # ── 掛載 slo_rules.yml ────────────────────────
+            # docker-compose 對應:
+            #   ./monitoring/slo_rules.yml:/etc/prometheus/slo_rules.yml
+            - name: prometheus-config
+              mountPath: /etc/prometheus/slo_rules.yml
+              subPath: slo_rules.yml
+            # ── 資料持久化 ────────────────────────────────
+            # docker-compose 版本：無 named volume，重啟後資料消失
+            # K8s 版本：掛載 PVC，重啟後資料保留
+            - name: prometheus-data
+              mountPath: /prometheus
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+      volumes:
+        - name: prometheus-config
+          configMap:
+            name: prometheus-config   # 對應 03-configmap-prometheus.yaml
+        - name: prometheus-data
+          # ★ 差異：compose 無持久化 → K8s 用 emptyDir（Pod 存活期間保留）
+          # 正式環境改為 persistentVolumeClaim 並建立對應的 PVC
+          emptyDir: {}
+---
+# ============================================================
+# Service：Prometheus
+# docker-compose 對應: ports: "9090:9090"（目前對外暴露，但不建議）
+# ------------------------------------------------------------
+# 這裡改用 ClusterIP：只有叢集內部（Grafana、AlertManager）能存取
+# 這是比 compose 版本更安全的做法
+# 本地 debug 用: kubectl port-forward svc/prometheus 9090:9090 -n stock-alert
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: stock-alert
+spec:
+  type: ClusterIP   # ★ 比 compose 更安全：不對外暴露
+  selector:
+    app: prometheus
+  ports:
+    - port: 9090
+      targetPort: 9090

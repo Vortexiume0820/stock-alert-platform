@@ -1,0 +1,112 @@
+# ============================================================
+# Deployment + Service：FastAPI 應用
+# docker-compose 對應: services.api
+# ============================================================
+#
+# ── Deployment ────────────────────────────────────────────
+# docker-compose 對應關係：
+#
+#   services.api:                    →  kind: Deployment
+#     container_name: stock-alert-api →  metadata.name: api
+#     build: .                        →  spec.containers[].image: （需先 build & push）
+#     ports: "8000:8000"              →  由 Service 負責（見下方）
+#     volumes: ./app/config.yml:...   →  spec.volumes + volumeMounts
+#     env_file: .env                  →  envFrom.secretRef
+#     networks: internal, external    →  由 Service 類型決定（ClusterIP vs NodePort）
+#
+# replicas: 1 → 目前跟 compose 一樣跑 1 個
+# 正式環境設為 3，搭配 HPA 自動擴縮
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: stock-alert
+  labels:
+    app: api
+spec:
+  replicas: 1   # docker-compose 預設 1 個 container，這裡對應
+                # 正式環境改為 3，並加上 HPA
+  selector:
+    matchLabels:
+      app: api   # 這個 label 用來讓 Service 找到對應的 Pod
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+        - name: api
+          # ★ 重要差異：docker-compose 用 build: . 直接從 Dockerfile 建立
+          # K8s 需要先把 image push 到 registry（Docker Hub / ECR / GCR）
+          # 本地測試可用: docker build -t stock-alert-api:latest . 後用 kind load
+          image: stock-alert-api:latest
+          imagePullPolicy: IfNotPresent   # 本地測試用；正式環境改 Always
+          ports:
+            - containerPort: 8000
+          # ── 環境變數：從 Secret 注入 ────────────────────────
+          # docker-compose 對應: env_file: .env
+          envFrom:
+            - secretRef:
+                name: stock-alert-secrets   # 對應 01-secret.yaml
+          # ── Volume 掛載：config.yml ─────────────────────────
+          # docker-compose 對應: volumes: ./app/config.yml:/code/app/config.yml
+          volumeMounts:
+            - name: api-config-volume
+              mountPath: /code/app/config.yml
+              subPath: config.yml   # 只掛單一檔案，而不是整個目錄
+          # ── 健康檢查 ────────────────────────────────────────
+          # docker-compose 沒有設定，K8s 原生支援
+          # liveness：Pod 掛了就重啟；readiness：Pod 未就緒就不送流量
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10   # 等 10 秒讓 FastAPI 啟動完成
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          # ── 資源限制 ────────────────────────────────────────
+          # docker-compose 沒有設定，K8s 建議一定要設
+          resources:
+            requests:
+              cpu: "100m"      # 0.1 個 CPU core（1000m = 1 core）
+              memory: "128Mi"
+            limits:
+              cpu: "500m"      # 最多用 0.5 個 CPU core
+              memory: "512Mi"
+      volumes:
+        - name: api-config-volume
+          configMap:
+            name: api-config   # 對應 02-configmap-api.yaml
+---
+# ============================================================
+# Service：讓外部可以存取 API
+# docker-compose 對應: ports: "8000:8000" + networks: external
+# ------------------------------------------------------------
+# K8s Service 類型說明：
+#   ClusterIP（預設）：只有叢集內部能存取，相當於 compose 的 internal network
+#   NodePort：在每個 Node 開一個 port（30000-32767），可從叢集外存取
+#   LoadBalancer：在雲端自動開一個 Load Balancer（本地環境不適用）
+#
+# 這裡用 NodePort 是因為本地 K8s（kind/k3d）沒有 LoadBalancer
+# 存取方式：http://localhost:30800
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: stock-alert
+spec:
+  type: NodePort   # 對應 compose 的 ports: "8000:8000"（對外暴露）
+  selector:
+    app: api   # 找 label 是 app: api 的 Pod
+  ports:
+    - port: 8000         # Service 對外的 port（叢集內其他服務連這個）
+      targetPort: 8000   # 轉發到 Pod 的 8000 port
+      nodePort: 30800    # 從 Host 連進來的 port（http://localhost:30800）
+                         # 對應 compose 的 host port 8000

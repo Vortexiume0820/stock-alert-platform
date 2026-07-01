@@ -1,0 +1,19 @@
+# ============================================================
+# Namespace
+# docker-compose 無對應概念
+# ------------------------------------------------------------
+# K8s 用 Namespace 把同一個專案的所有資源圈在一起
+#
+# 好處：
+#   - kubectl get all -n stock-alert  → 只看這個專案的資源
+#   - 不同專案的同名 Service 不會互相衝突
+#   - 可以對整個 Namespace 設定 ResourceQuota（限制 CPU/Memory）
+#
+# 使用方式：
+#   kubectl apply -f 00-namespace.yaml
+#   kubectl get all -n stock-alert
+# ============================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: stock-alert

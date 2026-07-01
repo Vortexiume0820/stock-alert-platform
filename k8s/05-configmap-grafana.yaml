@@ -1,0 +1,53 @@
+# ============================================================
+# ConfigMap：Grafana 自動 Provisioning 設定
+# docker-compose 對應:
+#   volumes:
+#     - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+#     - ./monitoring/grafana/dashboards:/etc/grafana/dashboards
+# ------------------------------------------------------------
+# 注意：Grafana Dashboard JSON 檔案較大（數百行），
+#       不建議直接放入 ConfigMap（etcd 有 1MB 限制）
+#       本檔只包含 provisioning 設定（資料源 + dashboard 路徑指向）
+#       Dashboard JSON 建議改用 PersistentVolume 或 Grafana API 匯入
+# ============================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-provisioning
+  namespace: stock-alert
+data:
+  # ── 資料源設定 ─────────────────────────────────────────────
+  # 對應: ./monitoring/grafana/provisioning/datasources/prometheus.yml
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090   # 同 Namespace 用 Service name 直連
+        isDefault: true
+      - name: Loki
+        type: loki
+        access: proxy
+        url: http://loki:3100
+      - name: Tempo
+        type: tempo
+        access: proxy
+        url: http://tempo:3200
+        jsonData:
+          tracesToLogsV2:
+            datasourceUid: loki
+          lokiSearch:
+            datasourceUid: loki
+
+  # ── Dashboard 自動載入設定 ─────────────────────────────────
+  # 對應: ./monitoring/grafana/provisioning/dashboards/dashboard.yml
+  dashboard-provider.yaml: |
+    apiVersion: 1
+    providers:
+      - name: 'default'
+        folder: ''
+        type: file
+        options:
+          path: /etc/grafana/dashboards   # Grafana 從這個路徑載入 JSON
+        allowUiUpdates: true

@@ -1,0 +1,93 @@
+# ============================================================
+# DaemonSet：Promtail（日誌採集）
+# docker-compose 對應: services.promtail
+# ============================================================
+# ★ 最重要的差異：Deployment vs DaemonSet
+#
+#   docker-compose 只有 1 個 promtail container（因為只有 1 台機器）
+#
+#   K8s 用 DaemonSet 而非 Deployment：
+#     - DaemonSet 保證叢集中「每個 Node」都跑一個 Promtail Pod
+#     - 因為日誌存在各自 Node 的磁碟上，每個 Node 要各自採集
+#     - 如果用 Deployment，只有 1 個 Node 上有 Promtail，其他 Node 的日誌就漏掉了
+#
+# 本地單節點學習環境（kind/k3d）：DaemonSet 和 Deployment 效果相同
+# 但用 DaemonSet 才是正確的架構概念
+#
+# ★ 另一個重大差異：Volume 掛載路徑
+#   docker-compose:
+#     - /var/lib/docker/containers（Docker runtime 日誌目錄）
+#     - /var/run/docker.sock（Docker API socket）
+#   K8s:
+#     - /var/log/pods（K8s 標準日誌目錄）
+#     - /var/run/docker.sock 仍可用，但 K8s 1.24+ 建議改用 /run/containerd/containerd.sock
+# ============================================================
+apiVersion: apps/v1
+kind: DaemonSet   # ★ 注意：不是 Deployment
+metadata:
+  name: promtail
+  namespace: stock-alert
+  labels:
+    app: promtail
+spec:
+  selector:
+    matchLabels:
+      app: promtail
+  template:
+    metadata:
+      labels:
+        app: promtail
+    spec:
+      # ServiceAccount 讓 Promtail 有權限呼叫 K8s API 發現 Pod
+      # 正式環境需要另外建立 ServiceAccount + ClusterRole + ClusterRoleBinding
+      # 簡化版本這裡先省略（預設 default SA 在本地測試通常可以）
+      containers:
+        - name: promtail
+          image: grafana/promtail:latest
+          args:
+            - "-config.file=/etc/promtail/config.yml"
+          volumeMounts:
+            # ── 掛載設定檔 ────────────────────────────────
+            - name: promtail-config
+              mountPath: /etc/promtail/config.yml
+              subPath: promtail.yml
+            # ── 掛載 Pod 日誌目錄 ─────────────────────────
+            # docker-compose 對應: /var/lib/docker/containers（已改為 K8s 路徑）
+            - name: pods-logs
+              mountPath: /var/log/pods
+              readOnly: true
+            # ── 掛載 containers 日誌（symlinks）──────────
+            - name: containers-logs
+              mountPath: /var/log/containers
+              readOnly: true
+            # ── Promtail positions 暫存 ───────────────────
+            - name: positions
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+      volumes:
+        - name: promtail-config
+          configMap:
+            name: promtail-config   # 對應 06-configmap-promtail.yaml
+        # docker-compose 對應: /var/lib/docker/containers → K8s 改為 /var/log/pods
+        - name: pods-logs
+          hostPath:
+            path: /var/log/pods     # Host Node 上的路徑
+        - name: containers-logs
+          hostPath:
+            path: /var/log/containers
+        - name: positions
+          emptyDir: {}
+      # DaemonSet 需要容忍 master node 的 taint（讓 Promtail 也能跑在 master 上）
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule

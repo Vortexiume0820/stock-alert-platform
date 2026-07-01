@@ -1,0 +1,142 @@
+# ============================================================
+# ConfigMap：Prometheus 的所有設定檔
+# docker-compose 對應:
+#   volumes:
+#     - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+#     - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
+#     - ./monitoring/slo_rules.yml:/etc/prometheus/slo_rules.yml
+# ------------------------------------------------------------
+# 一個 ConfigMap 可以放多個 key（對應多個檔案）
+# 掛載時用 items 指定每個 key 要對應到容器裡哪個路徑
+# ============================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: stock-alert
+data:
+  # ── 主設定檔 ───────────────────────────────────────────────
+  # 注意：targets 從 "api:8000" → "api.stock-alert.svc.cluster.local:8000"
+  # 在 K8s 裡，服務的完整 DNS 是 <service-name>.<namespace>.svc.cluster.local
+  # 但同個 Namespace 內可以直接用 service name，所以 "api:8000" 仍然有效
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+
+    scrape_configs:
+      - job_name: "stock-alert-api"
+        static_configs:
+          - targets: ["api:8000"]   # 同 Namespace 內直接用 Service name
+
+    rule_files:
+      - "/etc/prometheus/alert_rules.yml"
+      - "/etc/prometheus/slo_rules.yml"
+
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets: ["alertmanager:9093"]   # 同 Namespace 直接用 Service name
+
+  # ── 告警規則 ───────────────────────────────────────────────
+  alert_rules.yml: |
+    groups:
+      - name: stock_alerts
+        rules:
+          - alert: APIDown
+            expr: up{job="stock-alert-api"} == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              description: 'API 服務已離線，請立即處理'
+
+          - alert: HighAPILatency
+            expr: sli:latency_p95:rate5m > 0.5
+            for: 1m
+            labels:
+              severity: warning
+            annotations:
+              description: 'API P95 延遲超過 500ms'
+
+          - alert: APIHighErrorRate
+            expr: |
+              rate(http_requests_total{status="5xx"}[5m])
+              /
+              rate(http_requests_total[5m]) > 0.01
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              description: 'API 5xx 錯誤率超過 1%'
+
+          - alert: SchedulerStopped
+            expr: rate(scheduler_runs_total[5m]) == 0 or absent(scheduler_runs_total)
+            for: 3m
+            labels:
+              severity: critical
+            annotations:
+              description: 'Scheduler 超過 3 分鐘未執行，股價監控可能已中斷'
+
+          - alert: StockDataStale
+            expr: sli:scheduler_staleness:seconds > 90
+            for: 1m
+            labels:
+              severity: warning
+            annotations:
+              description: '排程超過 90 秒未成功完成，股價資料可能已過期'
+
+          - alert: StockFetchHighFailRate
+            expr: sli:fetch_success_rate:rate5m < 0.8
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              description: '股價查詢成功率低於 80%'
+
+          - alert: SLOAvailabilityBreach
+            expr: sli:http_availability:rate5m < 0.995
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              description: 'HTTP API 可用性低於 99.5%'
+
+          - alert: CircuitBreakerOpen
+            expr: increase(circuit_breaker_open_total[5m]) > 0
+            for: 0m
+            labels:
+              severity: warning
+            annotations:
+              description: 'Circuit Breaker 已開啟，twstock 連線失敗次數過多'
+
+  # ── SLI/SLO Recording Rules ────────────────────────────────
+  slo_rules.yml: |
+    groups:
+      - name: slo_rules
+        interval: 30s
+        rules:
+          - record: sli:fetch_success_rate:rate5m
+            expr: |
+              sum(rate(stock_price_fetch_total{status="success"}[5m]))
+              /
+              sum(rate(stock_price_fetch_total[5m]))
+
+          - record: sli:scheduler_staleness:seconds
+            expr: |
+              time() - scheduler_last_success_timestamp
+
+          - record: sli:http_availability:rate5m
+            expr: |
+              sum(rate(http_requests_total{status="2xx"}[5m]))
+              /
+              sum(rate(http_requests_total[5m]))
+
+          - record: sli:latency_p95:rate5m
+            expr: |
+              histogram_quantile(0.95,
+                sum(rate(http_request_duration_seconds_bucket[5m])) by (le)
+              )
+
+          - record: sli:scheduler_run_rate:rate5m
+            expr: |
+              rate(scheduler_runs_total[5m])

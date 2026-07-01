@@ -1,0 +1,32 @@
+# ============================================================
+# ConfigMap：api 服務的股票監控設定
+# docker-compose 對應: volumes: ./app/config.yml:/code/app/config.yml
+# ------------------------------------------------------------
+# K8s ConfigMap vs bind mount（掛載本機目錄）的差異：
+#
+#   bind mount（你現在的做法）：
+#     - 把 host 的 ./app/config.yml 掛進容器
+#     - 只在這台機器上有效，換到別的節點就找不到檔案
+#
+#   ConfigMap：
+#     - 把設定內容存進 K8s etcd
+#     - 任何節點上的 Pod 都能掛載，不依賴 host 路徑
+#     - kubectl edit configmap api-config 可以直接線上修改
+#
+# 掛載後位置：/code/app/config.yml（對應 Deployment 的 volumeMounts）
+# ============================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+  namespace: stock-alert
+data:
+  # key 就是掛載後的檔案名稱
+  config.yml: |
+    stocks:
+      - id: "2330"
+        name: "台積電"
+        threshold_pct: 3.0
+      - id: "2454"
+        name: "聯發科"
+        threshold_pct: 2.5

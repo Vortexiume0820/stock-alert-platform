@@ -1,0 +1,37 @@
+# ============================================================
+# ConfigMap：Tempo 設定
+# docker-compose 對應: volumes: ./monitoring/tempo.yml:/etc/tempo.yaml
+# ------------------------------------------------------------
+# Tempo 設定在 K8s 版本與 Compose 版本內容相同
+# 差異在於儲存路徑仍在容器內的 /tmp（重啟後 Trace 消失）
+# 正式環境應改為 backend: s3 並接 AWS S3 / GCS
+# ============================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tempo-config
+  namespace: stock-alert
+data:
+  tempo.yaml: |
+    server:
+      http_listen_port: 3200
+
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317   # 接收 FastAPI 送來的 OTLP Traces
+
+    storage:
+      trace:
+        backend: local
+        local:
+          path: /tmp/tempo/traces   # ★ 學習環境：存在容器內，重啟後清除
+        wal:
+          path: /tmp/tempo/wal
+        # 正式環境改為：
+        # backend: s3
+        # s3:
+        #   bucket: my-tempo-bucket
+        #   region: ap-northeast-1

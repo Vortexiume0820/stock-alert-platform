@@ -1,0 +1,79 @@
+# ============================================================
+# Deployment + Service：Tempo（分散式追蹤）
+# docker-compose 對應: services.tempo
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tempo
+  namespace: stock-alert
+  labels:
+    app: tempo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tempo
+  template:
+    metadata:
+      labels:
+        app: tempo
+    spec:
+      containers:
+        - name: tempo
+          image: grafana/tempo:latest
+          # docker-compose 對應:
+          #   command: ["-config.file=/etc/tempo.yaml"]
+          args:
+            - "-config.file=/etc/tempo.yaml"
+          ports:
+            - containerPort: 3200   # Tempo HTTP（Grafana 查詢用）
+              name: http
+            - containerPort: 4317   # OTLP gRPC（FastAPI 送 Trace 用）
+              name: otlp-grpc
+          volumeMounts:
+            # docker-compose 對應: ./monitoring/tempo.yml:/etc/tempo.yaml
+            - name: tempo-config
+              mountPath: /etc/tempo.yaml
+              subPath: tempo.yaml
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: tempo-config
+          configMap:
+            name: tempo-config   # 對應 07-configmap-tempo.yaml
+---
+# ============================================================
+# Service：Tempo（雙 Port）
+# docker-compose 對應:
+#   ports:
+#     - "3200:3200"   # Tempo HTTP
+#     - "4317:4317"   # OTLP gRPC
+# ------------------------------------------------------------
+# Tempo 需要兩個 port：
+#   3200：Grafana 查詢 Trace（ClusterIP 即可，叢集內通訊）
+#   4317：FastAPI 推送 Trace（ClusterIP 即可，api Pod 在同 Namespace）
+#
+# 兩個 port 都不需要對外暴露，改用 ClusterIP
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: tempo
+  namespace: stock-alert
+spec:
+  type: ClusterIP   # ★ 比 compose 更安全
+  selector:
+    app: tempo
+  ports:
+    - name: http
+      port: 3200
+      targetPort: 3200
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317

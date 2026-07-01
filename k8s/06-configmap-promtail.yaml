@@ -1,0 +1,60 @@
+# ============================================================
+# ConfigMap：Promtail 設定（K8s 版本與 Docker 版本有重大差異）
+# docker-compose 對應: volumes: ./monitoring/promtail.yml:/etc/promtail/config.yml
+# ------------------------------------------------------------
+# ★ 最重要的差異：日誌路徑與服務發現機制
+#
+#   Docker Compose 版本：
+#     - 掛載 /var/lib/docker/containers  讀取 Docker runtime 日誌
+#     - 用 docker_sd_configs 透過 Docker socket 發現容器
+#
+#   K8s 版本：
+#     - 日誌存在 /var/log/pods（K8s 標準路徑）
+#     - 用 kubernetes_sd_configs 透過 K8s API 發現 Pod
+#     - 不再依賴 Docker socket（K8s 1.24+ 已移除 dockershim）
+#     - label 也從 container name 改為 K8s 原生 label（pod, namespace 等）
+#
+# Promtail 以 DaemonSet 形式部署（見 13-daemonset-promtail.yaml）
+# 確保每個 Node 都有一個 Promtail 採集該 Node 上所有 Pod 的日誌
+# ============================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: promtail-config
+  namespace: stock-alert
+data:
+  promtail.yml: |
+    server:
+      http_listen_port: 9080
+      grpc_listen_port: 0
+
+    positions:
+      filename: /tmp/positions.yaml
+
+    clients:
+      - url: http://loki:3100/loki/api/v1/push   # 同 Namespace 用 Service name
+
+    scrape_configs:
+      - job_name: kubernetes-pods
+        # ★ K8s 版：改用 kubernetes_sd_configs 取代 docker_sd_configs
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - stock-alert   # 只採集 stock-alert namespace 的 Pod 日誌
+        pipeline_stages:
+          - docker: {}   # 解析 Docker JSON 格式的日誌
+        relabel_configs:
+          # 把 Pod 名稱作為 label
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          # 把 container 名稱作為 label
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            target_label: container
+          # 把 namespace 作為 label
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          # 日誌路徑：K8s 標準位置（取代 /var/lib/docker/containers）
+          - source_labels: [__meta_kubernetes_pod_uid, __meta_kubernetes_pod_container_name]
+            target_label: __path__
+            replacement: /var/log/pods/*$1*/$2/*.log

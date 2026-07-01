@@ -1,0 +1,110 @@
+# ============================================================
+# PersistentVolumeClaim + Deployment + Service：Grafana
+# docker-compose 對應: services.grafana
+# ============================================================
+#
+# ── PVC（持久化儲存）────────────────────────────────────────
+# docker-compose 對應: volumes: grafana_data:/var/lib/grafana
+# ------------------------------------------------------------
+# compose 的 named volume 等同於 K8s 的 PVC
+# PVC 讓 Grafana 的 dashboard 設定、使用者資料在 Pod 重啟後保留
+# ============================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-data
+  namespace: stock-alert
+spec:
+  accessModes:
+    - ReadWriteOnce   # 同時只能被一個 Node 掛載（對應 compose 的 single volume）
+  resources:
+    requests:
+      storage: 1Gi    # 申請 1GB 儲存空間
+---
+# ── Deployment ───────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: stock-alert
+  labels:
+    app: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana
+          ports:
+            - containerPort: 3000
+          # ── 環境變數 ──────────────────────────────────────
+          # docker-compose 對應:
+          #   environment:
+          #     - GF_SECURITY_ADMIN_PASSWORD=admin
+          env:
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: "admin"   # ★ 正式環境改從 Secret 注入
+              # 正式做法：
+              # valueFrom:
+              #   secretKeyRef:
+              #     name: grafana-secrets
+              #     key: admin-password
+          volumeMounts:
+            # ── 持久化資料 ────────────────────────────────
+            # docker-compose 對應: grafana_data:/var/lib/grafana
+            - name: grafana-data
+              mountPath: /var/lib/grafana
+            # ── Provisioning（資料源設定）────────────────
+            # docker-compose 對應:
+            #   ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+            - name: grafana-provisioning
+              mountPath: /etc/grafana/provisioning/datasources/datasources.yaml
+              subPath: datasources.yaml
+            - name: grafana-provisioning
+              mountPath: /etc/grafana/provisioning/dashboards/dashboard-provider.yaml
+              subPath: dashboard-provider.yaml
+            # ── Dashboard JSON ────────────────────────────
+            # docker-compose 對應:
+            #   ./monitoring/grafana/dashboards:/etc/grafana/dashboards
+            # ★ Dashboard JSON 太大不適合放 ConfigMap
+            # 解法一：先 kubectl port-forward 再從 Grafana UI 匯入 JSON
+            # 解法二：建立另一個 ConfigMap 專門放 dashboard JSON
+            # 解法三：正式環境用 Grafana Operator 管理
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: grafana-data
+          persistentVolumeClaim:
+            claimName: grafana-data   # 對應上方的 PVC
+        - name: grafana-provisioning
+          configMap:
+            name: grafana-provisioning   # 對應 05-configmap-grafana.yaml
+---
+# ── Service ──────────────────────────────────────────────────
+# docker-compose 對應: ports: "3000:3000" + networks: external
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: stock-alert
+spec:
+  type: NodePort   # 需要從瀏覽器存取，所以對外暴露
+  selector:
+    app: grafana
+  ports:
+    - port: 3000
+      targetPort: 3000
+      nodePort: 30300   # 存取方式：http://localhost:30300

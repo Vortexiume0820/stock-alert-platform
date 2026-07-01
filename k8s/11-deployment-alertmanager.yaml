@@ -1,0 +1,66 @@
+# ============================================================
+# Deployment + Service：AlertManager
+# docker-compose 對應: services.alertmanager
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: stock-alert
+  labels:
+    app: alertmanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertmanager
+  template:
+    metadata:
+      labels:
+        app: alertmanager
+    spec:
+      containers:
+        - name: alertmanager
+          image: prom/alertmanager
+          # docker-compose 對應:
+          #   command:
+          #     - '--config.file=/etc/alertmanager/alertmanager.yml'
+          args:
+            - "--config.file=/etc/alertmanager/alertmanager.yml"
+          ports:
+            - containerPort: 9093
+          volumeMounts:
+            # docker-compose 對應:
+            #   ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+            - name: alertmanager-config
+              mountPath: /etc/alertmanager/alertmanager.yml
+              subPath: alertmanager.yml
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+      volumes:
+        - name: alertmanager-config
+          configMap:
+            name: alertmanager-config   # 對應 04-configmap-alertmanager.yaml
+---
+# ── Service ──────────────────────────────────────────────────
+# docker-compose 對應: ports: "9093:9093"（目前對外，改為內部）
+# AlertManager 不需要從外部存取，改用 ClusterIP 更安全
+# 本地 debug: kubectl port-forward svc/alertmanager 9093:9093 -n stock-alert
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+  namespace: stock-alert
+spec:
+  type: ClusterIP   # ★ 比 compose 版本更安全：只有 Prometheus 需要連它
+  selector:
+    app: alertmanager
+  ports:
+    - port: 9093
+      targetPort: 9093
